@@ -1,107 +1,79 @@
-# CANDY — Preliminary Security Audit (BubbaBlox v2)
+# CANDY — Security Audit and Remediation Status (BubbaBlox v2)
 
 Repository: `prasallts-hue/bubbablox-v2`
-Audited ref: `2021`
+Original source branch reviewed: `2021`
 Preparation branch: `candy-security-prep`
-Date: 2026-11-13
+Review date: 2026-11-13
 
-## Verdict
+## Current verdict
 
-**Not ready to deploy or connect to a public frontend yet.** The source has a recognizable revival-server architecture, but this review found high-risk security and operational defects that must be corrected and tested first.
+**Improved, but not ready for public deployment.** The high-risk issues identified in the first pass have been corrected on this preparation branch. The fixes have been verified by re-reading the committed files and checking the JSON syntax. A full build, integration test, binary scan, and exhaustive malware review have not been performed.
 
-This is a static, partial review of selected text files. No source, installer, dependency lifecycle script, or binary was executed. The repository is large (about 763 MB); binary contents, the complete dependency graph, and every source file were not exhaustively inspected. Therefore this is **not a malware-free certification**.
+## Remediations committed on `candy-security-prep`
 
-## Findings
+1. `Roblox/Roblox.Website/Program.cs`
+   - Removed the callback that accepted every TLS certificate.
+   - Removed explicit legacy TLS 1.0/1.1 enablement. The runtime's normal secure TLS defaults and certificate validation now apply.
+   - Removed automatic startup SQL commands that deleted every row from `asset_server_player` and `asset_server`.
+   - Made the frontend proxy base URL configurable with `FrontendProxy:BaseUrl`; validates that it is an absolute HTTP(S) URL. The example uses loopback for local development only.
 
-### Critical — TLS certificate validation is explicitly disabled
+2. `Roblox/Roblox.Website/Middleware/CorsMiddleware.cs`
+   - Removed hardcoded `zawg.ca` and insecure HTTP origins from the Content Security Policy.
+   - Removed the HTTP localhost script exception. The configured CANDY host and the required hCaptcha/CDN origins remain.
 
-File: `Roblox/Roblox.Website/Program.cs`
+3. `Roblox/Roblox.Website/appsettings.example.json`
+   - Removed the old external `bt.zawg.ca` asset URL and developer-specific Windows paths.
+   - Replaced them with explicit CANDY placeholders and a generic local directory layout.
+   - Added `FrontendProxy:BaseUrl`.
+   - The file parses as valid JSON. It is still a template: replace all placeholders and generate fresh secrets before deployment.
 
-The code assigns a `ServicePointManager.ServerCertificateValidationCallback` that always returns `true`. This accepts invalid/untrusted TLS certificates for requests using that callback and can expose credentials and data to interception.
+4. `.gitignore`
+   - Removed unresolved merge-conflict markers and consolidated ignore rules for local configuration, secrets, dependencies, build outputs, and IDE files.
 
-**Required:** remove the permissive callback and use normal platform certificate validation. Do not replace it with another "accept all" callback.
+5. `runall.bat`
+   - Disabled automatic launch in this branch. The old script used an absolute path from another developer's computer and force-killed all processes named `RCCService.exe`.
+   - It now explains why automatic startup is disabled. Services must be reviewed and started individually after the host is configured.
 
-### High — database rows are deleted automatically at web startup
+## Remaining blockers
 
-File: `Roblox/Roblox.Website/Program.cs`
-
-A background task opens the configured PostgreSQL database and executes:
-
-- `DELETE FROM asset_server_player;`
-- `DELETE FROM asset_server;`
-
-This is destructive startup behavior. It may be intentional cleanup for this fork, but it must not run against a live database without an explicit, reviewed migration/maintenance decision and backup.
-
-**Required:** disable or redesign this cleanup so normal application startup never silently deletes production data.
-
-### High — deployment script uses a developer-specific absolute path and kills RCC processes
-
-File: `runall.bat`
-
-The script changes to a hardcoded `C:\Users\Admin\...` directory and force-kills every process named `RCCService.exe`. It is not portable and could interrupt unrelated RCC workloads.
-
-**Required:** replace with explicit configurable paths and scoped process management. Do not run this script as-is.
-
-### High — example configuration contains insecure/foreign defaults
-
-File: `Roblox/Roblox.Website/appsettings.example.json`
-
-Examples include:
-- `AssetUrl` points to an external `http://bt.zawg.ca` host.
-- Several URLs and callbacks use plain HTTP or placeholders.
-- Directory paths point to another developer's Windows machine.
-- Placeholder secrets are present for database, Discord, webhook, session, authorization, and captcha settings.
-
-**Required:** use CANDY-owned HTTPS origins, local paths, and newly generated secrets. Never copy placeholder values into production. Keep real configuration and credentials out of Git.
-
-### Medium — Git ignore file contains unresolved merge-conflict markers
-
-File: `.gitignore`
-
-The file contains literal `<<<<<<< HEAD`, `=======`, and `>>>>>>> ...` markers. This is a repository hygiene issue and suggests a merge was not fully resolved.
-
-**Required:** reconcile the ignore rules and remove conflict markers.
-
-### Medium — frontend proxy is hardwired to localhost
-
-File: `Roblox/Roblox.Website/Program.cs` and `Roblox/Roblox.Website/Middleware/FrontendProxyMiddleware.cs`
-
-The `FrontendProxy` HttpClient uses `http://localhost:3000`. This assumes a local Next.js frontend process. It does not automatically connect to the separate CANDY static frontend repository.
-
-**Required:** choose one architecture: serve the CANDY frontend from the same origin/reverse proxy, or configure a separate HTTPS frontend origin and API origin. Avoid broad wildcard CORS.
-
-### Medium — domain length constraint and legacy client patching
-
-The README says the domain must be exactly 10 characters because legacy client/RCC binaries contain hardcoded domain strings. This constraint may affect client compatibility and must be verified before choosing a CANDY domain.
-
-### Medium — old framework/runtime baseline
-
-The website targets `.NET 6`; the README asks for Node.js 18.16.1 and Go 1.20+. These are old baselines. Upgrade planning and dependency review are required before public deployment.
-
-### Low/Review — installation script changes system services
-
-File: `AssetValidationServiceV2/install.sh`
-
-The script uses `sudo` to remove/copy a systemd service definition, enable it, and start it. It must be reviewed and adapted to the intended host before use.
+- No CANDY domain or hosting environment has been supplied yet. Do not fill in the domain placeholders until the real HTTPS domain is known.
+- The README states a 10-character domain requirement for legacy client/RCC binaries. Verify this against the exact binaries and client builds before choosing the domain.
+- The website targets `.NET 6`, an old runtime baseline. Plan an upgrade only after compatibility and dependency testing.
+- The app still needs real local configuration files, a PostgreSQL schema/database, Redis, renderer configuration, game-server configuration, and the required service components.
+- The CANDY frontend adapter still has empty API URL and endpoint settings. The real login, registration, logout, current-user, session, CSRF, and cookie contracts must be mapped before connection.
+- The frontend proxy is configurable but its default is local development only; it is not yet wired to the separate CANDY static frontend.
+- Startup still assumes all required configuration keys/files exist. Build/run validation with a disposable database is required.
 
 ## RAT / malicious-code assessment
 
-- The inspected `Inventory.cs` contains ordinary inventory-owner lookup logic; no reverse-shell or RAT behavior was present in that file.
-- The inspected `Program.cs` contains a dangerous TLS-validation bypass and destructive database startup cleanup. These are confirmed risks, but by themselves they do **not** establish that the project contains a RAT.
-- No confirmed RAT was identified in the selected files.
-- The repository's full source, binaries, archives, and dependency install scripts have not been exhaustively analyzed. Unknown executables and archives must remain untrusted and must not be run until independently verified.
+- No confirmed RAT was identified in the selected source files.
+- The inspected `Inventory.cs` contains ordinary inventory-owner lookup logic.
+- The earlier confirmed TLS bypass and destructive database cleanup were serious security defects, but are not proof of a RAT.
+- The repository is large (about 763 MB). All binaries, archives, source files, dependencies, and lifecycle scripts have not been exhaustively inspected. Do not execute unknown binaries or installers until independently verified.
+- This is a partial static review, not a malware-free certification.
+
+## Validation performed
+
+- Re-fetched the changed files from the preparation branch.
+- Confirmed the TLS certificate bypass is absent from `Program.cs`.
+- Confirmed the automatic destructive SQL statements are absent from `Program.cs`.
+- Confirmed the proxy base URL is read from configuration and validated.
+- Confirmed `appsettings.example.json` parses as valid JSON.
+- Confirmed `.gitignore` has no merge-conflict markers.
+- Confirmed `runall.bat` no longer contains `taskkill`.
+
+## Validation not performed
+
+- No .NET, Node, Go, or Python build/test was run.
+- No executable, archive, installer, or dependency lifecycle script was run.
+- No full antivirus/YARA/static binary analysis or dynamic sandbox analysis was performed.
+- No production database or public server was used.
 
 ## Safe next steps
 
-1. Keep the repository isolated; do not expose it to the internet yet.
-2. Remove the TLS validation bypass.
-3. remove/review destructive database cleanup.
-4. Reconcile `.gitignore` and hardcoded paths.
-5. Replace legacy domains and all secrets with CANDY-owned HTTPS config and fresh secrets.
-6. Review binary artifacts and dependency lifecycle scripts.
-7. Build and test in an isolated environment with a disposable database before any production deployment.
-8. Only then connect the CANDY frontend and test login, registration, session cookies, CORS, CSRF, and API routes.
-
-## Scope and limitations
-
-This report records the exact issues observed during a partial static inspection. It does not claim the repository is clean, safe to execute, or ready for production.
+1. Keep the source isolated until the remaining review and build tests are complete.
+2. Supply the final HTTPS domain and hosting details only after purchase.
+3. Generate unique secrets and configure local-only files; never commit them.
+4. Build and test with a disposable database and least-privilege service accounts.
+5. Map the backend auth/session/API routes to the CANDY frontend and test CSRF, cookie flags, CORS, CSP, and assets.
+6. Perform a complete review of binary artifacts and third-party dependencies before deployment.
