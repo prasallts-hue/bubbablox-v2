@@ -1,57 +1,61 @@
 # CANDY — BubbaBlox v2 / Frontend Integration Notes
 
 Backend repository: `prasallts-hue/bubbablox-v2`
-Backend ref: `candy-security-prep`
+Preparation branch: `candy-security-prep`
 Frontend repository: `prasallts-hue/4ndyy-frontend`
 
 ## Current state
 
-The CANDY frontend already contains a small API adapter:
+The CANDY frontend already contains:
 
 - `assets/js/candy-config.js`
 - `assets/js/candy-api.js`
 
-The config currently has an empty `apiBaseUrl` and null endpoint paths. This is intentional until the backend origin and actual endpoint contract are confirmed.
+The frontend config intentionally has an empty `apiBaseUrl` and null endpoint paths. Do not invent endpoint paths before checking the backend controllers and session middleware.
 
-The backend's website is an ASP.NET Core .NET 6 application. Its controllers expose legacy Roblox-compatible routes (including `/apisite/`), and its frontend proxy currently forwards website routes to `http://localhost:3000`. That proxy is for a local Next.js frontend and is not, by itself, an integration with the separate CANDY static frontend.
+The backend is an ASP.NET Core .NET 6 website. Its `FrontendProxyMiddleware` serves a legacy Next.js frontend through a configurable `FrontendProxy:BaseUrl`. The example value `http://127.0.0.1:3000` is local development only; it does not connect to the separate static CANDY frontend repository by itself.
 
-## Integration architecture to finalize
+## Changes already prepared
 
-Prefer a same-origin deployment where possible:
+- TLS certificate validation bypass removed.
+- Startup SQL that deleted rows from the game-server tables removed.
+- Frontend proxy origin moved into `FrontendProxy:BaseUrl` configuration and validated as an absolute HTTP(S) URL.
+- Old `zawg.ca` and insecure HTTP CSP origins removed.
+- Example config now uses CANDY placeholders and generic paths rather than another developer's Windows directories.
+- The unsafe all-in-one launcher is disabled pending a safe, host-specific launch plan.
 
-- CANDY website: `https://<CANDY-domain>`
-- Backend API: `https://<CANDY-domain>/apisite/...` or a separately configured HTTPS API origin.
-- Session authentication: use secure, HttpOnly, SameSite cookies if the existing backend session flow supports them.
-- Keep credentials out of browser local storage and out of source control.
-- Configure exact allowed origins; do not use wildcard CORS with credentials.
+## Target architecture (to decide after domain/hosting purchase)
 
-Do not configure the frontend adapter with guessed routes. Login, registration, logout, current-user, CSRF, and session behavior must be mapped to the actual backend controllers and middleware first.
+Prefer same-origin deployment where possible:
 
-## Required configuration after deployment details are known
+- CANDY site: `https://<CANDY-domain>`
+- API: `https://<CANDY-domain>/apisite/...` or a separately configured HTTPS API origin.
+- Prefer secure, HttpOnly, SameSite cookies if compatible with the backend's existing session implementation.
+- Keep tokens and credentials out of local storage and source control.
+- Configure exact trusted origins; do not use wildcard CORS with credentials.
 
-Update `assets/js/candy-config.js` in the frontend repository with:
-- the final HTTPS API base URL;
-- verified login/register/logout/current-user endpoint paths;
-- the correct credential mode for the chosen same-origin or cross-origin architecture.
+Do not connect the frontend adapter until the actual login, registration, logout, current-user, CSRF, and session contracts have been confirmed.
 
-Backend configuration must use the same CANDY HTTPS origin for `BaseUrl`, `AssetUrl`, Discord callbacks, CORS/CSP, and client/RCC settings where applicable. Do not use the example secrets.
+## Pending configuration
 
-## Blocking items
+After the domain and host are known:
 
-- Decide the CANDY HTTPS domain. The README documents a 10-character domain constraint for legacy binaries; verify this against the exact client/RCC builds before committing to a domain.
-- Fix the TLS certificate-validation bypass in `Program.cs`.
-- Remove or explicitly gate the database deletion task that runs on website startup.
-- Replace the localhost-only frontend proxy architecture or deliberately deploy the frontend on localhost:3000.
-- Confirm the backend auth/session/CSRF contract before configuring the frontend adapter.
+1. Verify the README's legacy 10-character domain requirement against the exact client/RCC binaries.
+2. Set `BaseUrl`, `AssetUrl`, `CorsMiddlewareUrl`, Discord callback URLs, CDN settings, and the relevant client/RCC settings to CANDY-owned HTTPS origins.
+3. Set `FrontendProxy:BaseUrl` only if intentionally using the backend's legacy frontend proxy. Otherwise deploy the static frontend through the selected web server/reverse proxy and route API requests separately.
+4. Update `assets/js/candy-config.js` with the actual API base URL and verified endpoint paths.
+5. Generate fresh, unique database, session, authorization, bot, webhook, Discord, and CAPTCHA secrets. Keep private values in local config or environment variables, never Git.
 
 ## Validation checklist
 
-- [ ] Backend builds successfully in an isolated environment.
+- [ ] Backend builds in an isolated environment.
 - [ ] Database schema imports into a disposable database.
-- [ ] No startup operation deletes user or asset data unexpectedly.
-- [ ] TLS validation is enabled.
-- [ ] Login/register/logout/current-user endpoints are confirmed.
-- [ ] Cookie flags, CSRF token flow, and CORS are tested.
-- [ ] Frontend API adapter is configured with real endpoint paths.
-- [ ] Static assets and thumbnails load through the intended HTTPS origin.
-- [ ] No secrets, cookies, or private keys are committed.
+- [ ] Startup does not delete user or game-server data.
+- [ ] TLS certificate validation remains enabled.
+- [ ] Login/register/logout/current-user endpoints are mapped and tested.
+- [ ] Cookie flags and CSRF flow are verified.
+- [ ] Exact CORS/CSP origins are configured.
+- [ ] Frontend adapter uses the real API origin and route paths.
+- [ ] Static assets, thumbnails, and game services use the intended HTTPS host.
+- [ ] No secrets, cookies, private keys, or production config are committed.
+- [ ] RCC, renderer, and asset validation services run under isolated, least-privilege accounts.
