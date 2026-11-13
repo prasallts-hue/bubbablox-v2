@@ -1,10 +1,14 @@
 @echo off
-cd C:\Users\Admin\Desktop\Revival\ecsr\ecsrev-main\services2021
-taskkill /f /im RCCService.exe
-start /b cmd /c "cd /d 2016-roblox-main && call run.bat"
-start /b cmd /c "cd /d RCCService && call run.bat"
-timeout /t 2 >nul
-start /b cmd /c "cd /d renderer && call run.bat"
-start /b cmd /c "cd /d AssetValidationServiceV2 && call run.bat"
-start cmd /c "cd /d Roblox/Roblox.Website && run.bat"
-start /b redis-server.exe
+setlocal
+echo CANDY / BubbaBlox v2
+echo.
+echo Automatic startup is intentionally disabled in this preparation branch.
+echo The original script killed every RCCService.exe process and used a
+echo developer-specific absolute path. Do not run unknown binaries before
+echo completing the security review and configuring the host.
+echo.
+echo After the backend has been audited and configured, start each component
+echo individually from its own directory using its documented command.
+echo Keep RCC and validation services isolated and run them with least privilege.
+echo.
+pause
