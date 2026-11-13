@@ -16,9 +16,8 @@ using Roblox.Website.Hubs;
 using Roblox.Website.WebsiteModels;
 using Npgsql;
 
-ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-ServicePointManager.ServerCertificateValidationCallback += 
-	(sender, cert, chain, sslPolicyErrors) => true;
+// Keep the operating system's TLS defaults and certificate validation.
+// Never accept all server certificates: that would make HTTPS connections vulnerable to interception.
 
 var domain = AppDomain.CurrentDomain;
 // Set a timeout interval of 5 seconds.
@@ -134,9 +133,16 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxConcurrentUpgradedConnections = 1000;
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
 });
+var frontendProxyBaseUrl = configuration["FrontendProxy:BaseUrl"] ?? "http://127.0.0.1:3000";
+if (!Uri.TryCreate(frontendProxyBaseUrl, UriKind.Absolute, out var frontendProxyUri) ||
+    (frontendProxyUri.Scheme != Uri.UriSchemeHttp && frontendProxyUri.Scheme != Uri.UriSchemeHttps))
+{
+    throw new InvalidOperationException("FrontendProxy:BaseUrl must be an absolute HTTP or HTTPS URL.");
+}
+
 builder.Services.AddHttpClient("FrontendProxy", client =>
 {
-    client.BaseAddress = new Uri("http://localhost:3000");
+    client.BaseAddress = frontendProxyUri;
     client.Timeout = TimeSpan.FromSeconds(20);
     client.DefaultRequestHeaders.ConnectionClose = false;
 })
@@ -364,19 +370,10 @@ CommandHandler.Configure(configuration.GetSection("Render:BaseUrl").Value, confi
 SessionMiddleware.Configure(configuration.GetSection("Jwt:Sessions").Value);
 app.UseTimerMiddleware(); // Must always be last
 
-Task.Run(async () =>
-{
-    using var db = new NpgsqlConnection(configuration.GetSection("Postgres").Value);
-    await db.OpenAsync();
-    await using var cmd = new NpgsqlCommand("DELETE FROM asset_server_player;", db);
-    await cmd.ExecuteNonQueryAsync();
-	await using var cmd2 = new NpgsqlCommand("DELETE FROM asset_server;", db);
-    await cmd2.ExecuteNonQueryAsync();
-    
-    await Task.Delay(TimeSpan.FromSeconds(5));
-    using var assets = Roblox.Services.ServiceProvider.GetOrCreate<AssetsService>();
-    await assets.FixAssetImagesWithoutMetadata();
-});
+// Database cleanup is intentionally not performed during web startup.
+// The previous implementation deleted asset_server_player and asset_server rows
+// every time the website started. Any cleanup must be an explicit, reviewed
+// maintenance operation with a verified backup.
 
 app.UseEndpoints(e =>
 {
